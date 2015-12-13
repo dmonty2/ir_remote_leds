@@ -1,8 +1,8 @@
 /*
  * Description: 44-key IR remote customization.
  * Author: Dean Montgomery
- * Version: 0.1
- * Date: Oct 11, 2015
+ * Version: 1.0
+ * Date: Dec 12, 2015
  * .
  * WS28012B Addressable RGB lights
  * 44-key infrared remote for led strip.
@@ -90,6 +90,7 @@ struct REMOTE{
 };
 
 // TODO: add scripts to detect and store values.  flash color that represents button - press button 3-4 times - store in eeprom.
+// These are the codes for my remote, to decode your remote uncomment the "Serial" command in setup() and  "Serial.println(IRCommand);" command at the beginning of getButton() sections below.
 const REMOTE remote = {
   41820,41565,48705,48960,
   42840,42585,47685,47940,
@@ -180,7 +181,7 @@ void getButton(){
   cli();
   
   if (IRProtocol) {
-    //Serial.println(IRCommand);
+    //Serial.println(IRCommand);  // NOTE: uncomment this if you need to decode your remote
     if(IRCommand == 65535){
       IRCommand = LastIRCommand;
     } else {
