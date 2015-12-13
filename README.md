@@ -15,6 +15,7 @@ The arduino version has with the following additions:
 * Holding the button down will 
 * Flash is disabled - and yes, this is a much desired feature.
 * Auto button is currently an attempt at a water/rain ripple effect - this is a work in progress.
+* Power button turns off.  Any button turns it on again.  I'm lazy and don't want to have to press 2 buttons to get things going.  I also want to save some wear on the power button.
 
 NOTE: 
 In some addressable modes you will have to lightly touch buttons several times as the timing gets tight between listening for IR commands and rendering the animations.  This is why I used IRLremote.  The 44 key remote sends the code once then a separate code for 'repeat'  so if the arduino is not able to decode the initial send then it just starts repeating the last button pressed.
