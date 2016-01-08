@@ -12,10 +12,11 @@ The arduino version has with the following additions:
 * My 2nd white button under 'W'. is set to manage a relay module for a 110V light instead of showing another white.
 * DIY up/down colours buttons have much finer control of levels.  The OEM chip jumps several values on each button press.
 * Brightness works on the fade and jump.
-* Holding the button down will 
+* Holding fade or bright button down will increase the values. 
 * Flash is disabled - and yes, this is a much desired feature.
 * Auto button is currently an attempt at a water/rain ripple effect - this is a work in progress.
 * Power button turns off.  Any button turns it on again.  I'm lazy and don't want to have to press 2 buttons to get things going.  I also want to save some wear on the power button.
+* Lights will auto-power off after 4 hours.
 
 NOTE: 
 In some addressable modes you will have to lightly touch buttons several times as the timing gets tight between listening for IR commands and rendering the animations.  This is why I used IRLremote.  The 44 key remote sends the code once then a separate code for 'repeat'  so if the arduino is not able to decode the initial send then it just starts repeating the last button pressed.
@@ -28,6 +29,5 @@ This uses the following 2 libraries
 
 TODO:
 * Continue work on the rain/water effects.
-* Put in an auto-off timer 5 hours or so.
 * Leave flash button disabled!
 * If 'repeat' command is detected after a delay then ignore the repeat and assume that the initial code was missed. Temporarily slow/pause the animation so the next button press will have a better chance of being captured.  'Press and hold once then, tap to execute new command'.
