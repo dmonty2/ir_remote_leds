@@ -1,8 +1,9 @@
 /*
  * Description: 44-key IR remote customization.
  * Author: Dean Montgomery
- * Version: 1.0
+ * Version: 1.1
  * Date: Dec 12, 2015
+ * Update: Jan 7, 2015 - add shutdown timer
  * .
  * WS28012B Addressable RGB lights
  * 44-key infrared remote for led strip.
@@ -35,6 +36,10 @@ unsigned long currentMillis = millis(); // define here so it does not redefine i
 long    previousMillis = 0;
 #define MIN_INTERVAL 40  // fastest the led libraries can update without loosing access to PIR remote sensing.
 long    interval = MIN_INTERVAL;
+long    slowdown = 1;
+long    previousOffMillis = 0; // countdown power off timer
+static long offInterval = 14400000; // 1000mills * 60sec * 60min * 4hour = 14400000;
+
 
 #define BRIGHTNESS 190            //MAX brightness value.
 uint8_t brightness = BRIGHTNESS;         // 0...255  ( used to brighten and dim colors this will be a fraction of BRIGHTNESS. 255=100% brightness which is 190 )
@@ -166,12 +171,20 @@ void loop()
   currentMillis = millis();
   getButton();
   
-  if(currentMillis - previousMillis > interval) {
+  if(currentMillis - previousMillis > interval * slowdown) {
     previousMillis = currentMillis;
     if (effect >= 1){
       update_effect(); 
       FastLED.show();
+      if ( slowdown >= 2 ){
+        slowdown--;
+      }
     }
+  }
+  if(currentMillis - previousOffMillis > offInterval) {
+    setColor("pw", 0, 0, 0);
+    FastLED.show();
+    previousOffMillis = currentMillis;
   }
 }
 
@@ -181,8 +194,10 @@ void getButton(){
   cli();
   
   if (IRProtocol) {
+    previousOffMillis = currentMillis; // reset shutdown timer on button press.
     //Serial.println(IRCommand);  // NOTE: uncomment this if you need to decode your remote
     if(IRCommand == 65535){
+      slowdown = 15;
       IRCommand = LastIRCommand;
     } else {
       LastIRCommand = IRCommand;
@@ -193,6 +208,7 @@ void getButton(){
       if ( effect == AURORA ){
         scale = qadd8(scale, 2);
       } else if ( slide == SLIDE_RGB ){
+        slowdown = 3;
         r = leds[1].r;
         g = leds[1].g;
         b = leds[1].b;
@@ -203,6 +219,7 @@ void getButton(){
         effect = 0;
         FastLED.show();
       } else {
+        slowdown = 3;
         if ( brightness <= 250 ){
           brightness += 5;
         }
@@ -216,7 +233,9 @@ void getButton(){
       //Serial.println("dim");
       if ( effect == AURORA ){
         scale = qsub8(scale, 2);
+        slowdown = 2;
       } else if ( slide == SLIDE_RGB ){
+        slowdown = 1;
         for ( i = 0; i < NUM_LEDS; i++ ){
           leds[i].nscale8_video(240);
         }
@@ -227,6 +246,7 @@ void getButton(){
         effect = 0;
         FastLED.show();
       } else {
+        slowdown = 1;
         if ( brightness >= 10 ) {
           brightness -= 5;
         } else if ( brightness >= 1 ){
@@ -329,6 +349,7 @@ void getButton(){
       colorUpDown(BLUE, 1);
     }
     if(IRCommand == remote.quick){
+        slowdown = 2;
       if (effect == AURORA){
         spd = qadd8(spd, 1);
       } else {
@@ -351,6 +372,7 @@ void getButton(){
       colorUpDown(BLUE, -1);
     }
     if(IRCommand == remote.slow){
+        slowdown = 2;
       if (effect == AURORA){
         spd = qsub8(spd, 1);
       } else {
@@ -418,6 +440,7 @@ void getButton(){
         slide = SLIDE_VALUE;
     }
     if(IRCommand == remote.fade7){
+        slowdown = 10;
         // multiple clicks chooses next effect.
         interval = 65;
         if (effect == FADE7){
@@ -436,6 +459,7 @@ void getButton(){
     }
     if(IRCommand == 65535){
         //Serial.println("repeat");
+        slowdown = 15;
     }
     IRProtocol = 0;
   }
