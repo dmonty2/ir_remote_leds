@@ -12,7 +12,7 @@ The arduino version has with the following additions:
 * My 2nd white button under 'W'. is set to manage a relay module for a 110V light instead of showing another white.
 * DIY up/down colours buttons have much finer control of levels.  The OEM chip jumps several values on each button press.
 * Brightness works on the fade and jump.
-* Holding fade or bright button down will increase the values. 
+* Holding bright/dim fast/slow up/down buttons down works.  This saves wear on the buttons. 
 * Flash is disabled - and yes, this is a much desired feature.
 * Auto button is currently an attempt at a water/rain ripple effect - this is a work in progress.
 * Power button turns off.  Any button turns it on again.  I'm lazy and don't want to have to press 2 buttons to get things going.  I also want to save some wear on the power button.
