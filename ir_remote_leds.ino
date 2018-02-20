@@ -1,9 +1,10 @@
 /*
  * Description: 44-key IR remote customization.
  * Author: Dean Montgomery
- * Version: 1.1
+ * Version: 1.2
  * Date: Dec 12, 2015
  * Update: Jan 7, 2015 - add shutdown timer
+ * Update: Feb 20, 2017 - Update support for newer FastLED and IRLremote libraries.
  * .
  * WS28012B Addressable RGB lights
  * 44-key infrared remote for led strip.
@@ -15,33 +16,55 @@
 #include "FastLED.h"
 #include "EEPROM.h"
 
+// === Variables to be set ===
+#define NUM_LEDS 46        // Number of leds in the strip
+#define PIN_IR 2           // Pin for infrared remote - must be a pin that supports inturrupt
+#define PIN_LED 3          // Arduino pin for LEDs
+#define PIN_RELAY 4        // Arduino pin for relay switch
+#define BRIGHTNESS 200     // MAX brightness value.
+CNec IRLremote;            // Remote controll type - see IRLremote library examples.
 
-#define PIN_LED 3
-#define NUM_LEDS 46
+// === Remote setup ===
+struct REMOTE{
+  uint16_t bright;   uint16_t dim;        uint16_t pause;     uint16_t power;
+  uint16_t red1;     uint16_t green1;     uint16_t blue1;     uint16_t white1; 
+  uint16_t red2;     uint16_t green2;     uint16_t blue2;     uint16_t white2; 
+  uint16_t red3;     uint16_t green3;     uint16_t blue3;     uint16_t white3; 
+  uint16_t red4;     uint16_t green4;     uint16_t blue4;     uint16_t white4; 
+  uint16_t red5;     uint16_t green5;     uint16_t blue5;     uint16_t white5; 
+  uint16_t red_up;   uint16_t green_up;   uint16_t blue_up;   uint16_t quick; 
+  uint16_t red_down; uint16_t green_down; uint16_t blue_down; uint16_t slow; 
+  uint16_t diy1;     uint16_t diy2;       uint16_t diy3;      uint16_t autom; 
+  uint16_t diy4;     uint16_t diy5;       uint16_t diy6;      uint16_t flash; 
+  uint16_t jump3;    uint16_t jump7;      uint16_t fade3;     uint16_t fade7;
+};
+
+// These are the codes for my remote. Use IRLremote Receive example to decode your remote.
+const REMOTE remote = {
+  0x5C,0x5D,0x41,0x40,
+  0x58,0x59,0x45,0x44,
+  0x54,0x55,0x49,0x48,
+  0x50,0x51,0x4D,0x4C,
+  0x1C,0x1D,0x1E,0x1F,
+  0x18,0x19,0x1A,0x1B,
+  0x14,0x15,0x16,0x17,
+  0x10,0x11,0x12,0x13,
+  0x0C,0x0D,0x0E,0x0F,
+  0x08,0x09,0x0A,0x0B,
+  0x04,0x05,0x06,0x07
+};
+
+// === Application variables ==
 CRGB    leds[NUM_LEDS];
 uint8_t order[NUM_LEDS];
-
-#define IRL_BLOCKING true
-#define PIN_IR 2
-uint8_t oldSREG = 0;
-
-uint8_t IRProtocol = 0;
-//uint16_t IRAddress = 0;
-uint32_t IRCommand = 0;
-
-#define PIN_RELAY 4
-bool big_light = HIGH;
-
+bool big_light = HIGH;      // Light attached to relay switch.
 unsigned long currentMillis = millis(); // define here so it does not redefine in the loop.
-long    previousMillis = 0;
-#define MIN_INTERVAL 40  // fastest the led libraries can update without loosing access to PIR remote sensing.
-long    interval = MIN_INTERVAL;
-long    slowdown = 1;
-long    previousOffMillis = 0; // countdown power off timer
-static long offInterval = 14400000; // 1000mills * 60sec * 60min * 4hour = 14400000;
-
-
-#define BRIGHTNESS 190            //MAX brightness value.
+unsigned long previousMillis = 0;
+#define MIN_intrvl 40  // fastest the led libraries can update without loosing access to PIR remote sensing.
+long    intrvl = MIN_intrvl;
+long    slowdown = 2;
+unsigned long previousOffMillis = 0; // countdown power off timer
+static long offintrvl = 14400000; // 1000mills * 60sec * 60min * 4hour = 14400000;
 uint8_t brightness = BRIGHTNESS;         // 0...255  ( used to brighten and dim colors this will be a fraction of BRIGHTNESS. 255=100% brightness which is 190 )
 uint8_t bright[NUM_LEDS];         // used to track random taper off brightness.
 uint8_t pause = 0;
@@ -65,7 +88,8 @@ uint8_t last_white = 0;
 CHSV water[NUM_LEDS];
 
 uint8_t stage = 0; // variable to track stage/steps within an effect
-uint32_t LastIRCommand = 0;
+uint16_t IRCommand = 0;
+uint16_t LastIRCommand = 0;
 // effects
 uint8_t effect = 0;
 #define FADE7 1
@@ -78,37 +102,8 @@ uint8_t effect = 0;
 #define FADE7C 8
 #define RAIN 9
 #define AURORA 10
-
 #define DIMMING 55
-struct REMOTE{
-  uint32_t bright;   uint32_t dim;        uint32_t pause;     uint32_t power;
-  uint32_t red1;     uint32_t green1;     uint32_t blue1;     uint32_t white1; 
-  uint32_t red2;     uint32_t green2;     uint32_t blue2;     uint32_t white2; 
-  uint32_t red3;     uint32_t green3;     uint32_t blue3;     uint32_t white3; 
-  uint32_t red4;     uint32_t green4;     uint32_t blue4;     uint32_t white4; 
-  uint32_t red5;     uint32_t green5;     uint32_t blue5;     uint32_t white5; 
-  uint32_t red_up;   uint32_t green_up;   uint32_t blue_up;   uint32_t quick; 
-  uint32_t red_down; uint32_t green_down; uint32_t blue_down; uint32_t slow; 
-  uint32_t diy1;     uint32_t diy2;       uint32_t diy3;      uint32_t autom; 
-  uint32_t diy4;     uint32_t diy5;       uint32_t diy6;      uint32_t flash; 
-  uint32_t jump3;    uint32_t jump7;      uint32_t fade3;     uint32_t fade7;
-};
 
-// TODO: add scripts to detect and store values.  flash color that represents button - press button 3-4 times - store in eeprom.
-// These are the codes for my remote, to decode your remote uncomment the "Serial" command in setup() and  "Serial.println(IRCommand);" command at the beginning of getButton() sections below.
-const REMOTE remote = {
-  41820,41565,48705,48960,
-  42840,42585,47685,47940,
-  43860,43605,46665,46920,
-  44880,44625,45645,45900,
-  58140,57885,57630,57375,
-  59160,58905,58650,58395,
-  60180,59925,59670,59415,
-  61200,60945,60690,60435,
-  62220,61965,61710,61455,
-  63240,62985,62730,62475,
-  64260,64005,63750,63495
-};
 
 // storing diy in eeprom
 struct DIY {
@@ -136,346 +131,300 @@ struct DIYSTORE {
 void setup()
 {
   delay (3000);
-  //Serial.begin(115200);
-  // pin change mask registers decide which pins are enabled as triggers
-  //PCMSK |= (1 << PCINT);
-  // PCICR: Pin Change Interrupt Control Register - enables interrupt vectors
-  //PCICR |= (1 << PCIE);
   FastLED.addLeds<WS2812B, PIN_LED, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(BRIGHTNESS);
   FastLED.setDither( 0 );  // Stops flikering in animations.
   pinMode(PIN_RELAY, OUTPUT);
   digitalWrite(PIN_RELAY, HIGH);
-
-  attachInterrupt(digitalPinToInterrupt(PIN_IR), IRLinterrupt<IR_NEC>, CHANGE);
+  if (!IRLremote.begin(PIN_IR)){
+    //Serial.println(F("You did not choose a valid pin."));
+  }
   setColor("pw", 0, 0, 0);
-
-  /*
-  int sz = EEPROM.length();
-  Serial.print (" size of EEPROM: ");
-  Serial.println(sz);
-  sz = sizeof(remote);
-  Serial.print (" size of 44 key remote: ");
-  Serial.println(sz);
-  sz = sizeof(diy);
-  Serial.print (" size of DIY: ");
-  Serial.println(sz);
-  sz = sizeof(diystore);
-  Serial.print (" size of DIYSTORE: ");
-  Serial.println(sz);
-*/
 }
 
 void loop()
 {
   currentMillis = millis();
-  getButton();
-  
-  if(currentMillis - previousMillis > interval * slowdown) {
-    previousMillis = currentMillis;
-    if (effect >= 1){
-      update_effect(); 
-      FastLED.show();
-      if ( slowdown >= 2 ){
-        slowdown--;
+  if (IRLremote.available()){
+    getButton();
+  }
+  if (!IRLremote.receiving()) {
+    if(currentMillis - previousMillis > intrvl) {
+      previousMillis = currentMillis;
+      if (effect >= 1){
+        update_effect(); 
+        FastLED.show();
+        if ( slowdown >= 2 ){
+          slowdown--;
+        }
       }
     }
-  }
-  if(currentMillis - previousOffMillis > offInterval) {
-    setColor("pw", 0, 0, 0);
-    FastLED.show();
-    previousOffMillis = currentMillis;
+    if(currentMillis - previousOffMillis > offintrvl) {
+      setColor("pw", 0, 0, 0);
+      FastLED.show();
+      previousOffMillis = currentMillis;
+    }
   }
 }
 
 void getButton(){
-  // temporary disable interrupts
-  oldSREG = SREG;
-  cli();
-  
-  if (IRProtocol) {
-    previousOffMillis = currentMillis; // reset shutdown timer on button press.
-    //Serial.println(IRCommand);  // NOTE: uncomment this if you need to decode your remote
-    if(IRCommand == 65535){
-      slowdown = 15;
-      IRCommand = LastIRCommand;
-    } else {
-      LastIRCommand = IRCommand;
-    }
-    if(IRCommand == remote.bright){
-      //Serial.println("bright");
-      // TODO: ... LastIRCommand = bright
-      if ( effect == AURORA ){
-        scale = qadd8(scale, 2);
-      } else if ( slide == SLIDE_RGB ){
-        slowdown = 3;
-        r = leds[1].r;
-        g = leds[1].g;
-        b = leds[1].b;
-        if ( r + 1 < 253 && g + 1 < 253 && b + 1 < 253 ){
-          r += 2; g += 2; b += 2;
-          fill_solid(leds, NUM_LEDS, CRGB(r,g,b));
-        }
-        effect = 0;
-        FastLED.show();
-      } else {
-        slowdown = 3;
-        if ( brightness <= 250 ){
-          brightness += 5;
-        }
-        if ( effect == 0 ){
-          effect = BRIGHT;
-        }
-      }
-      //Serial.println(brightness);
-    }
-    if(IRCommand == remote.dim){
-      //Serial.println("dim");
-      if ( effect == AURORA ){
-        scale = qsub8(scale, 2);
-        slowdown = 2;
-      } else if ( slide == SLIDE_RGB ){
-        slowdown = 1;
-        for ( i = 0; i < NUM_LEDS; i++ ){
-          leds[i].nscale8_video(240);
-        }
-        r = leds[1].r;
-        g = leds[1].g;
-        b = leds[1].b;
-        //fill_solid(leds, NUM_LEDS, CRGB(r,g,b));
-        effect = 0;
-        FastLED.show();
-      } else {
-        slowdown = 1;
-        if ( brightness >= 10 ) {
-          brightness -= 5;
-        } else if ( brightness >= 1 ){
-          brightness -= 1;
-        }
-        if ( effect == 0 ){
-          effect = DIM;
-        }
-      }
-      
-      //Serial.println(brightness);
-    }
-    if(IRCommand == remote.pause){
-        //Serial.println("pause");
-        if ( pause == 0 ){
-          pause = effect;
-          effect = 0;
-        } else {
-          effect = pause;
-          pause = 0;
-        }
-    }
-    if(IRCommand == remote.power){
-        setColor("pw", 0, 0, 0);
-    }
-    if(IRCommand == remote.red1){
-        setColor("r1", 0, 255, brightness);
-    }
-    if(IRCommand == remote.green1){
-        setColor("g1", 96, 255, brightness);
-    }
-    if(IRCommand == remote.blue1){
-        setColor("b1", 160, 255, brightness);
-    }
-    if(IRCommand == remote.white1){
-        setColor("w1", 0, 0, brightness);
-    }
-    if(IRCommand == remote.red2){
-        setColor("r2", 16, 255, brightness);
-    }
-    if(IRCommand == remote.green2){
-        setColor("g2", 112, 255, brightness);
-    }
-    if(IRCommand == remote.blue2){
-        setColor("b2", 176, 255, brightness);
-    }
-    if(IRCommand == remote.white2){
-        //setColor("w2", 16, 50, brightness);
-        if (big_light == LOW) {
-          digitalWrite(PIN_RELAY, HIGH);
-          big_light = HIGH;
-        } else {
-          digitalWrite(PIN_RELAY, LOW);
-          big_light = LOW;
-        }
-    }
-    if(IRCommand == remote.red3){
-        setColor("r3", 32, 255, brightness);
-    }
-    if(IRCommand == remote.green3){
-        setColor("g3", 120, 255, brightness);
-    }
-    if(IRCommand == remote.blue3){
-        setColor("b3", 192, 255, brightness);
-    }
-    if(IRCommand == remote.white3){
-        setColor("w3", 216, 80, brightness);
-    }
-    if(IRCommand == remote.red4){
-        setColor("r4", 48, 255, brightness);
-    }
-    if(IRCommand == remote.green4){
-        setColor("g4", 128, 255, brightness);
-    }
-    if(IRCommand == remote.blue4){
-        setColor("b4", 208, 255, brightness);
-    }
-    if(IRCommand == remote.white4){
-        setColor("w4", 96, 70, brightness);
-    }
-    if(IRCommand == remote.red5){
-        setColor("r5", 64, 255, brightness);
-    }
-    if(IRCommand == remote.green5){
-        setColor("g5", 136, 255, brightness);
-    }
-    if(IRCommand == remote.blue5){
-        setColor("b5", 224, 255, brightness);
-    }
-    if(IRCommand == remote.white5){
-        setColor("w5", 64, 60, brightness);
-    }
-    if(IRCommand == remote.red_up){
-      colorUpDown(RED, 1); 
-    }
-    if(IRCommand == remote.green_up){
-      colorUpDown(GREEN, 1);
-    }
-    if(IRCommand == remote.blue_up){
-      colorUpDown(BLUE, 1);
-    }
-    if(IRCommand == remote.quick){
-        slowdown = 2;
-      if (effect == AURORA){
-        spd = qadd8(spd, 1);
-      } else {
-        if ( interval >= 101 ){
-          interval -= 100;
-        } else if ( interval >= MIN_INTERVAL + 10 && interval <= 100 ){
-          interval -= 10;
-        } else {
-          interval = MIN_INTERVAL;
-        }
-      }
-    }
-    if(IRCommand == remote.red_down){
-      colorUpDown(RED, -1);
-    }
-    if(IRCommand == remote.green_down){
-      colorUpDown(GREEN, -1);
-    }
-    if(IRCommand == remote.blue_down){
-      colorUpDown(BLUE, -1);
-    }
-    if(IRCommand == remote.slow){
-        slowdown = 2;
-      if (effect == AURORA){
-        spd = qsub8(spd, 1);
-      } else {
-        //Serial.println("slow");
-        if (interval >= 100){
-          interval += 100;
-        } else {
-          interval += 15;
-        }
-      }
-    }
-    if(IRCommand == remote.diy1){
-      updateDiy(1);
-    }
-    if(IRCommand == remote.diy2){
-      updateDiy(2);
-    }
-    if(IRCommand == remote.diy3){
-      updateDiy(3);
-    }
-    if(IRCommand == remote.autom){
-      effect = RAIN;
-      slide = SLIDE_VALUE;
-      for (i = 0; i < NUM_LEDS; i++ ){
-        bright[i] = brightness;
-        water[i] = CHSV(h,s,v);
-      }
-      interval = MIN_INTERVAL+20;
-      //Serial.println("auto");
-    }
-    if(IRCommand == remote.diy4){
-      updateDiy(4);
-    }
-    if(IRCommand == remote.diy5){
-      updateDiy(5);
-    }
-    if(IRCommand == remote.diy6){
-      updateDiy(6);
-    }
-    if(IRCommand == remote.flash){
-        //Serial.println("flash");
-    }
-    if(IRCommand == remote.jump3){
-        //Serial.println("jump 3");
-        stage = 1;
-        interval = 1200;
-        h=0; s=255; v=0;
-        effect = JUMP3;
-        slide = SLIDE_VALUE;
-    }
-    if(IRCommand == remote.jump7){
-        //Serial.println("jump 7");
-        stage = 1;
-        interval = 1700;
-        h=0; s=255; v=0;
-        effect = JUMP7;
-        slide = SLIDE_VALUE;
-    }
-    if(IRCommand == remote.fade3){
-        //Serial.println("fade 3");
-        stage = 1;
-        interval = MIN_INTERVAL;
-        h=0; s=255; v=0;
-        effect = FADE3;
-        slide = SLIDE_VALUE;
-    }
-    if(IRCommand == remote.fade7){
-        slowdown = 10;
-        // multiple clicks chooses next effect.
-        interval = 65;
-        if (effect == FADE7){
-          effect = FADE7B; 
-        } else if (effect == FADE7B) {
-          effect = AURORA;
-          interval = 55;
-          spd = 2;
-          scale = 10;
-        } else {
-          effect = FADE7;
-        }
-        stage = 1;
-        slide = SLIDE_VALUE;
-        h=0; s=255; v=brightness;
-    }
-    if(IRCommand == 65535){
-        //Serial.println("repeat");
-        slowdown = 15;
-    }
-    IRProtocol = 0;
+  auto data = IRLremote.read();
+  IRCommand = data.command;
+  previousOffMillis = currentMillis; // reset shutdown timer on button press.
+  if(IRCommand == 0x00){
+    slowdown = 3;
+    IRCommand = LastIRCommand;
+  } else {
+    LastIRCommand = IRCommand;
   }
-  SREG = oldSREG;
-}
-
-void IREvent(uint8_t protocol, uint16_t address, uint32_t command) {
-  // called when directly received a valid IR signal.
-  // do not use Serial inside, it can crash your program!
-
-  // dont update value if blocking is enabled
-  if (IRL_BLOCKING && !IRProtocol) {
-    // update the values to the newest valid input
-    IRProtocol = protocol;
-    //IRAddress = address;
-    IRCommand = command;
+  if(IRCommand == remote.bright){
+    if ( effect == AURORA ){
+      scale = qadd8(scale, 2);
+    } else if ( slide == SLIDE_RGB ){
+      slowdown = 3;
+      r = leds[1].r;
+      g = leds[1].g;
+      b = leds[1].b;
+      if ( r + 1 < 253 && g + 1 < 253 && b + 1 < 253 ){
+        r += 2; g += 2; b += 2;
+        fill_solid(leds, NUM_LEDS, CRGB(r,g,b));
+      }
+      effect = 0;
+      FastLED.show();
+    } else {
+      slowdown = 3;
+      if ( brightness <= 250 ){
+        brightness += 5;
+      }
+      if ( effect == 0 ){
+        effect = BRIGHT;
+      }
+    }
+  }
+  if(IRCommand == remote.dim){
+    //Serial.println("dim");
+    if ( effect == AURORA ){
+      scale = qsub8(scale, 2);
+      slowdown = 2;
+    } else if ( slide == SLIDE_RGB ){
+      slowdown = 2;
+      for ( i = 0; i < NUM_LEDS; i++ ){
+        leds[i].nscale8_video(240);
+      }
+      r = leds[1].r;
+      g = leds[1].g;
+      b = leds[1].b;
+      effect = 0;
+      FastLED.show();
+    } else {
+      slowdown = 2;
+      if ( brightness >= 10 ) {
+        brightness -= 5;
+      } else if ( brightness >= 1 ){
+        brightness -= 1;
+      }
+      if ( effect == 0 ){
+        effect = DIM;
+      }
+    }
+  }
+  if(IRCommand == remote.pause){
+      if ( pause == 0 ){
+        pause = effect;
+        effect = 0;
+      } else {
+        effect = pause;
+        pause = 0;
+      }
+  }
+  if(IRCommand == remote.power){
+      setColor("pw", 0, 0, 0);
+  }
+  if(IRCommand == remote.red1){
+      setColor("r1", 0, 255, brightness);
+  }
+  if(IRCommand == remote.green1){
+      setColor("g1", 96, 255, brightness);
+  }
+  if(IRCommand == remote.blue1){
+      setColor("b1", 160, 255, brightness);
+  }
+  if(IRCommand == remote.white1){
+      setColor("w1", 0, 0, brightness);
+  }
+  if(IRCommand == remote.red2){
+      setColor("r2", 16, 255, brightness);
+  }
+  if(IRCommand == remote.green2){
+      setColor("g2", 112, 255, brightness);
+  }
+  if(IRCommand == remote.blue2){
+      setColor("b2", 176, 255, brightness);
+  }
+  if(IRCommand == remote.white2){
+      //setColor("w2", 16, 50, brightness);
+      if (big_light == LOW) {
+        digitalWrite(PIN_RELAY, HIGH);
+        big_light = HIGH;
+      } else {
+        digitalWrite(PIN_RELAY, LOW);
+        big_light = LOW;
+      }
+  }
+  if(IRCommand == remote.red3){
+      setColor("r3", 32, 255, brightness);
+  }
+  if(IRCommand == remote.green3){
+      setColor("g3", 120, 255, brightness);
+  }
+  if(IRCommand == remote.blue3){
+      setColor("b3", 192, 255, brightness);
+  }
+  if(IRCommand == remote.white3){
+      setColor("w3", 216, 80, brightness);
+  }
+  if(IRCommand == remote.red4){
+      setColor("r4", 48, 255, brightness);
+  }
+  if(IRCommand == remote.green4){
+      setColor("g4", 128, 255, brightness);
+  }
+  if(IRCommand == remote.blue4){
+      setColor("b4", 208, 255, brightness);
+  }
+  if(IRCommand == remote.white4){
+      setColor("w4", 96, 70, brightness);
+  }
+  if(IRCommand == remote.red5){
+      setColor("r5", 64, 255, brightness);
+  }
+  if(IRCommand == remote.green5){
+      setColor("g5", 136, 255, brightness);
+  }
+  if(IRCommand == remote.blue5){
+      setColor("b5", 224, 255, brightness);
+  }
+  if(IRCommand == remote.white5){
+      setColor("w5", 64, 60, brightness);
+  }
+  if(IRCommand == remote.red_up){
+    colorUpDown(RED, 1); 
+  }
+  if(IRCommand == remote.green_up){
+    colorUpDown(GREEN, 1);
+  }
+  if(IRCommand == remote.blue_up){
+    colorUpDown(BLUE, 1);
+  }
+  if(IRCommand == remote.quick){
+      slowdown = 2;
+    if (effect == AURORA){
+      spd = qadd8(spd, 1);
+    } else {
+      if ( intrvl >= 101 ){
+        intrvl -= 100;
+      } else if ( intrvl >= MIN_intrvl + 10 && intrvl <= 100 ){
+        intrvl -= 10;
+      } else {
+        intrvl = MIN_intrvl;
+      }
+    }
+  }
+  if(IRCommand == remote.red_down){
+    colorUpDown(RED, -1);
+  }
+  if(IRCommand == remote.green_down){
+    colorUpDown(GREEN, -1);
+  }
+  if(IRCommand == remote.blue_down){
+    colorUpDown(BLUE, -1);
+  }
+  if(IRCommand == remote.slow){
+      slowdown = 2;
+    if (effect == AURORA){
+      spd = qsub8(spd, 1);
+    } else {
+      //Serial.println("slow");
+      if (intrvl >= 100){
+        intrvl += 100;
+      } else {
+        intrvl += 15;
+      }
+    }
+  }
+  if(IRCommand == remote.diy1){
+    updateDiy(1);
+  }
+  if(IRCommand == remote.diy2){
+    updateDiy(2);
+  }
+  if(IRCommand == remote.diy3){
+    updateDiy(3);
+  }
+  if(IRCommand == remote.autom){
+    effect = RAIN;
+    slide = SLIDE_VALUE;
+    for (i = 0; i < NUM_LEDS; i++ ){
+      bright[i] = brightness;
+      water[i] = CHSV(h,s,v);
+    }
+    intrvl = MIN_intrvl+20;
+  }
+  if(IRCommand == remote.diy4){
+    updateDiy(4);
+  }
+  if(IRCommand == remote.diy5){
+    updateDiy(5);
+  }
+  if(IRCommand == remote.diy6){
+    updateDiy(6);
+  }
+  if(IRCommand == remote.flash){
+      //Serial.println("flash");
+  }
+  if(IRCommand == remote.jump3){
+      //Serial.println("jump 3");
+      stage = 1;
+      intrvl = 1200;
+      h=0; s=255; v=0;
+      effect = JUMP3;
+      slide = SLIDE_VALUE;
+  }
+  if(IRCommand == remote.jump7){
+      //Serial.println("jump 7");
+      stage = 1;
+      intrvl = 1700;
+      h=0; s=255; v=0;
+      effect = JUMP7;
+      slide = SLIDE_VALUE;
+  }
+  if(IRCommand == remote.fade3){
+      //Serial.println("fade 3");
+      stage = 1;
+      intrvl = MIN_intrvl;
+      h=0; s=255; v=0;
+      effect = FADE3;
+      slide = SLIDE_VALUE;
+  }
+  if(IRCommand == remote.fade7){
+      slowdown = 10;
+      // multiple clicks chooses next effect.
+      intrvl = 65;
+      if (effect == FADE7){
+        effect = FADE7B; 
+      } else if (effect == FADE7B) {
+        effect = AURORA;
+        intrvl = 55;
+        spd = 2;
+        scale = 10;
+      } else {
+        effect = FADE7;
+      }
+      //effect = FADE7;
+      //intrvl = 1000;
+      stage = 1;
+      slide = SLIDE_VALUE;
+      h=0; s=255; v=brightness;
   }
 }
 
@@ -612,7 +561,7 @@ void fade3(){
 }
 
 void fade7(){
-  for ( i = 0; i <=NUM_LEDS; i++ ){
+  for ( i = 0; i < NUM_LEDS; i++ ){
     leds[i] = CHSV(h+(i*3), s, brightness);
   }
   h++;
@@ -633,7 +582,7 @@ void fade7b(){
 }
 
 void fade7c(){
-  for ( i = 0; i <=NUM_LEDS; i++ ){
+  for ( i = 0; i < NUM_LEDS; i++ ){
     leds[i] = CHSV(h+(i*3), s, brightness);
   } 
   h++;
@@ -700,7 +649,7 @@ void autom(){
 }
 
 void aurora(){
-  for ( i = 0; i <=NUM_LEDS; i++ ){
+  for ( i = 0; i < NUM_LEDS; i++ ){
     v = inoise8(i*3*scale, z);
     h = inoise8(i*scale, z);
     h = qsub8(h,16);
@@ -712,7 +661,7 @@ void aurora(){
 void rain(){
   // this is nice ripple.
   x = 0;
-  for ( i = 0; i <=NUM_LEDS; i++ ){
+  for ( i = 0; i < NUM_LEDS; i++ ){
     // todo small sin within large sin wave
     v = triwave8(y + (i * 30) + scale8(triwave8(i*43), 20));
     if ( v > x && qsub8(v, x) > 150 ) {
@@ -731,7 +680,7 @@ void rain(){
   y+=random8(10,20);
   /*
   brightness+=random8(10,20);
-  for ( i = 0; i <=NUM_LEDS; i++ ){
+  for ( i = 0; i < NUM_LEDS; i++ ){
     v = sin8(brightness + (i * 30));
     leds[i]            = CHSV(h, s, v);
     //if ( i > NUM_LEDS/2 - 10 && i < NUM_LEDS/2 + 10 && random8() < 60 ){
@@ -790,6 +739,3 @@ void rain(){
   //Serial.println(bright[i]);
   
 }
-
-
-
