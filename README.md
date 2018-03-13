@@ -1,8 +1,6 @@
 # 44key_remote_leds
 44 Key Infrared Remote with Addressable LED lights controlled by an Arduino and MySensors.
 
-test
-
 The 44 Key Infrared Remote is very common on ebay and ali-express however it is designed for non-addressable LEDs.  I wanted to use this remote to control addressable LEDs.  It has duplicated most of the standard behaviour of the original controller. The DIY buttons have the following logic:
 * Press DIY#
 * use up/down RGB arrows
