@@ -173,6 +173,8 @@ void setup()
     //Serial.println(F("You did not choose a valid pin."));
   }
   led_off();
+  wait(LONG_WAIT);
+  relay_off();
 }
 
 void loop()
@@ -193,19 +195,9 @@ void loop()
       }
     }
     if(currentMillis - previousOffMillis > offintrvl) {
-      if(led_light == 1){
-        led_off();
-      }
-      if(big_light == 1){
-        relay_off();
-      }
+      led_off();
+      relay_off();
       previousOffMillis = currentMillis;
-      big_light=0;
-      wait(LONG_WAIT);
-      digitalWrite(PIN_RELAY, !big_light);
-      prepMsg(ID_S_LIGHT_RELAY,V_STATUS);
-      send(msg_ALL.set(newLight == 1 ? "1" : "0" ));
-      wait(SHORT_WAIT);
     }
   }
 }
@@ -254,9 +246,9 @@ void receive(const MyMessage &message){
       } else if (message.sensor==ID_S_LIGHT_RELAY){
         bool newLight = message.getBool();
         if (newLight){
-          relay_off();
-        } else {
           relay_on();
+        } else {
+          relay_off();
         }
       }
       break;
@@ -476,7 +468,11 @@ void getButton(){
     updateDiy(6);
   }
   if(IRCommand == remote.flash){
-    flash();
+    if(big_light == 0){
+      relay_on();
+    } else {
+      relay_off();
+    }
   }
   if(IRCommand == remote.jump3){
       //Serial.println("jump 3");
@@ -578,8 +574,9 @@ void led_off(){
   led_light = 0;
   intrvl = 500;
   effect = NO_EFFECT;
-  FastLED.clear();
+  FastLED.clear();  // make sure it is off!
   FastLED.show();
+  wait(SHORT_WAIT);
 }
 
 void relay_off(){
@@ -791,15 +788,6 @@ void jump7(){
     fill_solid(leds, NUM_LEDS, CHSV( HUE_PINK, 0, brightness ));
     stage = 1; 
   }
-}
-
-void flash(){
-  // This is controlling a light on a relay
-  big_light = !big_light;
-  digitalWrite(PIN_RELAY, !big_light);
-  prepMsg(ID_S_LIGHT_RELAY,V_STATUS);
-  send(msg_ALL.set(big_light==1?"1":"0"));
-  wait(SHORT_WAIT);
 }
 
 void autom(){
