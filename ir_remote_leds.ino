@@ -560,7 +560,7 @@ void update_effect(){
 void led_off(){
   if (led_light == 1){
     for ( i = 0; i < NUM_LEDS; i++ ){
-      led[i] = RGB(0,0,0);
+      leds[i] = CRGB(0,0,0);
       FastLED.show();
       wait(50);
     }
@@ -571,6 +571,7 @@ void led_off(){
   FastLED.clear();  // make sure it is off!
   FastLED.show();
   wait(SHORT_WAIT);
+  char hex[7] = {0};
   sprintf(hex,"%02X%02X%02X",0,0,0);
   prepMsg(ID_S_RGB_LIGHT,V_RGB);
   send(msg_ALL.set(hex));
