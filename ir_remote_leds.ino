@@ -66,12 +66,14 @@ CRGB leds[NUM_LEDS];
 CRGB c1;
 CRGB c2;
 CRGB trans;
-bool big_light = HIGH;      // Light attached to relay switch.
+bool big_light = HIGH;      // Track light attached to relay switch. Power off on boot.
+bool led_light = HIGH;      // Track led light on/off.  Send power off on boot.
 unsigned long currentMillis = millis(); // define here so it does not redefine in the loop.
 unsigned long previousMillis = 0;
 unsigned long previousDebounce = 0;
 unsigned long previousOffMillis = 0; // countdown power off timer
-static long offintrvl = 14400000; // 1000mills * 60sec * 60min * 4hour = 14400000;
+//static long offintrvl = 14400000; // 1000mills * 60sec * 60min * 4hour = 14400000;
+static long offintrvl = 30000;
 #define DEBOUNCE 500
 #define MIN_intrvl 40  // fastest the led libraries can update without loosing access to PIR remote sensing.
 long    intrvl = MIN_intrvl;
@@ -170,7 +172,7 @@ void setup()
   if (!IRLremote.begin(PIN_IR)){
     //Serial.println(F("You did not choose a valid pin."));
   }
-  setColor(0, 0, 0);
+  led_off();
 }
 
 void loop()
@@ -191,9 +193,19 @@ void loop()
       }
     }
     if(currentMillis - previousOffMillis > offintrvl) {
-      setColor(0, 0, 0);
-      FastLED.show();
+      if(led_light == 1){
+        led_off();
+      }
+      if(big_light == 1){
+        relay_off();
+      }
       previousOffMillis = currentMillis;
+      big_light=0;
+      wait(LONG_WAIT);
+      digitalWrite(PIN_RELAY, !big_light);
+      prepMsg(ID_S_LIGHT_RELAY,V_STATUS);
+      send(msg_ALL.set(newLight == 1 ? "1" : "0" ));
+      wait(SHORT_WAIT);
     }
   }
 }
@@ -235,20 +247,16 @@ void receive(const MyMessage &message){
       if (message.sensor==ID_S_RGB_LIGHT) {
         prepMsg(ID_S_RGB_LIGHT,V_STATUS);
         if (message.getInt() == 0) {
-          effect = NO_EFFECT;
-          FastLED.clear();
-          FastLED.show();
+          led_off();
         } else {
           setColor(0, 0, brightness);
         }
       } else if (message.sensor==ID_S_LIGHT_RELAY){
         bool newLight = message.getBool();
-        if (big_light != newLight){
-          digitalWrite(PIN_RELAY, !newLight);
-          big_light=newLight;
-          prepMsg(ID_S_LIGHT_RELAY,V_STATUS);
-          send(msg_ALL.set(newLight == 1 ? "1" : "0" ));
-          wait(SHORT_WAIT);
+        if (newLight){
+          relay_off();
+        } else {
+          relay_on();
         }
       }
       break;
@@ -336,7 +344,8 @@ void getButton(){
       }
   }
   if(IRCommand == remote.power){
-      setColor(0, 0, 0);
+      led_off();
+      relay_off();
   }
   if(IRCommand == remote.red1){
       setColor(0, 255, brightness);
@@ -476,7 +485,7 @@ void getButton(){
       h=0; s=255; v=0;
       effect = JUMP3;
       slide = SLIDE_VALUE;
-      sendRGB(1);
+      sendRGB();
   }
   if(IRCommand == remote.jump7){
       //Serial.println("jump 7");
@@ -485,7 +494,7 @@ void getButton(){
       h=0; s=255; v=0;
       effect = JUMP7;
       slide = SLIDE_VALUE;
-      sendRGB(1);
+      sendRGB();
   }
   if(IRCommand == remote.fade3){
       //Serial.println("fade 3");
@@ -494,9 +503,10 @@ void getButton(){
       h=0; s=255; v=0;
       effect = FADE3;
       slide = SLIDE_VALUE;
-      sendRGB(1);
+      sendRGB();
   }
   if(IRCommand == remote.fade7){
+      led_light = 0;
       slowdown = 10;
       // multiple clicks chooses next effect.
       intrvl = 65;
@@ -513,7 +523,7 @@ void getButton(){
       stage = 1;
       slide = SLIDE_VALUE;
       h=0; s=255; v=brightness;
-      sendRGB(1);
+      sendRGB();
   }
 }
 
@@ -551,14 +561,48 @@ void update_effect(){
   }
 }
 
+void led_off(){
+  if (led_light == 1){
+    for ( i = 0; i < NUM_LEDS; i++ ){
+      led[i] = RGB(0,0,0);
+      FastLED.show();
+      wait(50);
+    }
+  }
+  sprintf(hex,"%02X%02X%02X",0,0,0);
+  prepMsg(ID_S_RGB_LIGHT,V_RGB);
+  send(msg_ALL.set(hex));
+  wait(LONG_WAIT);
+  send(msg_ALL.set("0"));
+  wait(SHORT_WAIT);
+  led_light = 0;
+  intrvl = 500;
+  effect = NO_EFFECT;
+  FastLED.clear();
+  FastLED.show();
+}
+
+void relay_off(){
+  set_relay(0);
+}
+
+void relay_on(){
+  set_relay(1);
+}
+
+void set_relay(bool new_state){
+  digitalWrite(PIN_RELAY, !new_state);
+  big_light=new_state;
+  prepMsg(ID_S_LIGHT_RELAY,V_STATUS);
+  send(msg_ALL.set(new_state == 1 ? "1" : "0" ));
+  wait(SHORT_WAIT);
+}
+
 void setColor(uint8_t hue, uint8_t sat, uint8_t value){
   //"red 1", 0, 255, brightness);
   //effect = NO_EFFECT;
   c1=leds[1];
-  bool is_on = 1;
-  if ( hue == 0 && sat == 0 && value == 0 ){
-    is_on = 0;
-  }
+  led_light=1;
   h = hue; s = sat; v = value;
   if ( hue == 0 && sat == 0 && value != 0 ){
     const CRGB whites[] = {
@@ -575,15 +619,10 @@ void setColor(uint8_t hue, uint8_t sat, uint8_t value){
     if (last_white++ >= 18){
       last_white = 0;
     }
-    
   } else {
     hsv2rgb_rainbow( CHSV(h,s,v), c2);
   }
-  if ( is_on ) { 
-    sendRGB(1);
-  } else {
-    sendRGB(0);
-  }
+  sendRGB();
   effect = WIPE;
   brightness2 = brightness;
   stage = 1;
@@ -592,24 +631,16 @@ void setColor(uint8_t hue, uint8_t sat, uint8_t value){
   b=c2.b;
 }
 
-void sendRGB (bool is_on) {
+void sendRGB () {
+  led_light = 1;
   prepMsg(ID_S_RGB_LIGHT,V_STATUS);
   char hex[7] = {0};
-  if (is_on) {
-    sprintf(hex,"%02X%02X%02X",leds[0].r,leds[0].g,leds[0].b);
-    prepMsg(ID_S_RGB_LIGHT,V_RGB);
-    send(msg_ALL.set(hex));
-    wait(LONG_WAIT);
-    send(msg_ALL.set("1"));
-    wait(SHORT_WAIT);
-  } else {
-    sprintf(hex,"%02X%02X%02X",0,0,0);
-    prepMsg(ID_S_RGB_LIGHT,V_RGB);
-    send(msg_ALL.set(hex));
-    wait(LONG_WAIT);
-    send(msg_ALL.set("0"));
-    wait(SHORT_WAIT);
-  }
+  sprintf(hex,"%02X%02X%02X",leds[0].r,leds[0].g,leds[0].b);
+  prepMsg(ID_S_RGB_LIGHT,V_RGB);
+  send(msg_ALL.set(hex));
+  wait(LONG_WAIT);
+  send(msg_ALL.set("1"));
+  wait(SHORT_WAIT);
 }
 
 void colorUpDown(int color, int8_t val){
@@ -653,7 +684,7 @@ void updateDiy(uint8_t num){
   effect = WIPE;
   stage = 1;
   slide = SLIDE_RGB;
-  sendRGB(1);
+  sendRGB();
 }
 
 void fade3(){
