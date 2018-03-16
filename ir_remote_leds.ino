@@ -565,17 +565,17 @@ void led_off(){
       wait(50);
     }
   }
-  sprintf(hex,"%02X%02X%02X",0,0,0);
-  prepMsg(ID_S_RGB_LIGHT,V_RGB);
-  send(msg_ALL.set(hex));
-  wait(LONG_WAIT);
-  send(msg_ALL.set("0"));
-  wait(SHORT_WAIT);
   led_light = 0;
   intrvl = 500;
   effect = NO_EFFECT;
   FastLED.clear();  // make sure it is off!
   FastLED.show();
+  wait(SHORT_WAIT);
+  sprintf(hex,"%02X%02X%02X",0,0,0);
+  prepMsg(ID_S_RGB_LIGHT,V_RGB);
+  send(msg_ALL.set(hex));
+  wait(LONG_WAIT);
+  send(msg_ALL.set("0"));
   wait(SHORT_WAIT);
 }
 
