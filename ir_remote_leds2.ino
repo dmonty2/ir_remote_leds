@@ -16,7 +16,6 @@
 
 #include "IRLremote.h"
 #include "FastLED.h"
-#include "EEPROM.h"
 
 //#define MY_DEBUG 
 //#define MY_PARENT_NODE_ID 0
@@ -129,13 +128,11 @@ MyMessage msg_ALL (0,0);  // initate and re-use to save memory.
 #define SHORT_WAIT 50                    // short wait between signals
 #define ID_S_LIGHT_RELAY 1
 #define ID_S_RGB_LIGHT 2
-// There be dragons - MySensors already uses EEPROM and me lazy.
-// storing diy in eeprom
 struct DIY {
   uint8_t r; uint8_t g; uint8_t b;
 };
 //Track start points in eeprom index
-static uint16_t eeprom_addr[] = {0, 3, 6, 9, 12, 15};
+static uint8_t eeprom_addr[] = {0, 3, 6, 9, 12, 15};
 
 struct DIY_BUTTON {
   uint8_t button;
@@ -344,8 +341,13 @@ void getButton(){
   }
   if(IRCommand == remote.power){
       effect = OFFING;
-      led_off();
-      relay_off();
+      if (big_light == 1){
+        relay_off();
+        led_off();
+      } else {
+        led_off();
+        relay_off();
+      }
   }
   if(IRCommand == remote.red1){
       setColor(0, 255, brightness);
@@ -670,22 +672,21 @@ void updateDiy(uint8_t num){
   c1=leds[1];
   if ( lastdiy.button == num && lastdiy.dirty == true){
     // avoid 100,000 write cycle limit by only writing what is needed.
-    EEPROM.update(eeprom_addr[num], r);
-    EEPROM.update(eeprom_addr[num] + 1, g);
-    EEPROM.update(eeprom_addr[num] + 2, b);
+    saveState(eeprom_addr[num], r);
+    saveState(eeprom_addr[num] + 1, g);
+    saveState(eeprom_addr[num] + 2, b);
     lastdiy.dirty = false;
   } else {
     lastdiy.button = num;
     lastdiy.dirty = false;
     DIY diy;
-    EEPROM.get(eeprom_addr[num], diy);
+    r = loadState(eeprom_addr[num]);
+    g = loadState(eeprom_addr[num]+1);
+    b = loadState(eeprom_addr[num]+2);
     // default was 255 so make unset value a dull grey 
-    if ( diy.r > BRIGHTNESS ) diy.r = BRIGHTNESS/3;
-    if ( diy.g > BRIGHTNESS ) diy.g = BRIGHTNESS/3;
-    if ( diy.b > BRIGHTNESS ) diy.b = BRIGHTNESS/3;
-    r = diy.r;
-    g = diy.g;
-    b = diy.b;
+    if ( r > BRIGHTNESS ) r = BRIGHTNESS/3;
+    if ( g > BRIGHTNESS ) g = BRIGHTNESS/3;
+    if ( b > BRIGHTNESS ) b = BRIGHTNESS/3;
   }
   effect = WIPE;
   stage = 1;
